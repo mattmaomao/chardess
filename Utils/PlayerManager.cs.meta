@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: f4a3682cdd2d571479c2310953d81884
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - card: {instanceID: 0}
+  - cell: {instanceID: 0}
+  - row: {instanceID: 0}
+  - playerHand: {instanceID: 0}
+  - opponentHand: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
