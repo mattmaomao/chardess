@@ -1,10 +1,10 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using Mirror;
-using Unity.VisualScripting;
 
 public enum GameState {Wait, Init, DrawCards, PlayCards, TurnEnd, GameEnd, Debug};
 public class MainGameManager : NetworkBehaviour
@@ -37,6 +37,8 @@ public class MainGameManager : NetworkBehaviour
     
     // board
     public Cell pointingCell;
+    Dictionary<int, Cell> boardCell_Server = new();
+    Dictionary<int, GameObject> boardCard_Server = new();
     Dictionary<int, Cell> boardCell = new();
     Dictionary<int, GameObject> boardCard = new();
     int boardRows, boardCols;
@@ -111,28 +113,12 @@ public class MainGameManager : NetworkBehaviour
                 break;
             // init everything needed to run the game
             case GameState.Init:
-                resetGame();
-                initPlayerData();
-                initCardDeck();
-                Rpc_initBoard();
-                // init both players' hand
-                StartCoroutine(slowInitHand());
+                GF_init();
                 gameState = GameState.Wait;
                 break;
             // draw card
             case GameState.DrawCards:
-                Rpc_updateUIInfo(player1Data, player2Data);
-                // increase max mana
-                if (playerIndex == 1) {
-                    player1Data.incMaxMana();
-                    Server_drawCard(currentPlayer, playerIden1);
-                }
-                else {
-                    player2Data.incMaxMana();
-                    Server_drawCard(currentPlayer, playerIden2);
-                }
-
-                // go to next state (play)
+                GF_drawCard();
                 gameState = GameState.PlayCards;
                 break;
             // wait for player to play card, move unit
@@ -140,11 +126,8 @@ public class MainGameManager : NetworkBehaviour
                 break;
             // switch player
             case GameState.TurnEnd:
-                runTurnEndEffect();
-                setTurnInfo();
-
-                // go back to draw card state
-                gameState = GameState.DrawCards;
+                GF_turnEnd();
+                gameState = GameState.Wait;
                 break;
             // terminate game
             case GameState.GameEnd:
@@ -159,6 +142,15 @@ public class MainGameManager : NetworkBehaviour
     }
 
     #region init game
+    void GF_init() {
+        resetGame();
+        initPlayerData();
+        initCardDeck();
+        Rpc_initBoard();
+        // init both players' hand
+        StartCoroutine(slowInitHand());
+    }
+
     // load card is slow...
     IEnumerator slowInitHand()
     {
@@ -205,6 +197,8 @@ public class MainGameManager : NetworkBehaviour
                 GameObject cell = row.transform.GetChild(j).gameObject;
                 cell.GetComponent<Cell>().id = cellID;
                 boardCell[cellID] = cell.GetComponent<Cell>();
+                if (isServer)
+                    boardCell_Server[cellID] = cell.GetComponent<Cell>();
                 cellID++;
             }
             if (boardCols == 0) 
@@ -220,16 +214,20 @@ public class MainGameManager : NetworkBehaviour
     // init fix card deck (set #each card)
     [ServerCallback]
     void initCardDeck() {
+        readyToGoOn = false;
         clearAllDeck();
         // init fixed deck with index
         int[] fixedDeck = {0, 5, 0};
 
+        int x = 0;
         // instantiate and spawn cards
         for (int i = 0; i < fixedDeck.Length; i++) {
             for (int j = 0; j < fixedDeck[i] ; j++) {
                 CardScriptableObject c = cardsScriptObjs[i];
                 GameObject cardObj = Instantiate(tempCardObj);
                 cardObj.GetComponent<Card>().init(c);
+                cardObj.GetComponent<Card>().uniqueID = x;
+                x++;
                 cardObj.SetActive(false);
 
                 cardObj.GetComponent<Card>().owner = playerIden1;
@@ -241,6 +239,8 @@ public class MainGameManager : NetworkBehaviour
                 CardScriptableObject c = cardsScriptObjs[i];
                 GameObject cardObj = Instantiate(tempCardObj);
                 cardObj.GetComponent<Card>().init(c);
+                cardObj.GetComponent<Card>().uniqueID = x;
+                x++;
                 cardObj.SetActive(false);
 
                 cardObj.GetComponent<Card>().owner = playerIden2;
@@ -250,20 +250,24 @@ public class MainGameManager : NetworkBehaviour
         // update UI
         updateDeckCount();
 
-        readyToGoOn = true;
-
         Rpc_loadCards(fixedDeck, fixedDeck);
+
+        readyToGoOn = true;
     }
 
     // init card into deck
     [ClientRpc]
     void Rpc_loadCards(int[] fixDeck1, int[] fixDeck2) {
+        readyToGoOn = false;
+        int x = 0;
         // instantiate and spawn cards
         for (int i = 0; i < fixDeck1.Length; i++) {
             for (int j = 0; j < fixDeck1[i]; j++) {
                 CardScriptableObject c = cardsScriptObjs[i];
                 GameObject cardObj = Instantiate(tempCardObj);
                 cardObj.GetComponent<Card>().init(c);
+                cardObj.GetComponent<Card>().uniqueID = x;
+                x++;
                 cardObj.SetActive(false);
                 cardObj.GetComponent<Card>().owner = playerIden1;
 
@@ -282,6 +286,8 @@ public class MainGameManager : NetworkBehaviour
                 CardScriptableObject c = cardsScriptObjs[i];
                 GameObject cardObj = Instantiate(tempCardObj);
                 cardObj.GetComponent<Card>().init(c);
+                cardObj.GetComponent<Card>().uniqueID = x;
+                x++;
                 cardObj.SetActive(false);
                 cardObj.GetComponent<Card>().owner = playerIden2;
 
@@ -302,14 +308,26 @@ public class MainGameManager : NetworkBehaviour
     }
 
     #region draw card
+    void GF_drawCard() {
+        if (playerIndex == 1) {
+            Server_drawCard(currentPlayer, playerIden1);
+        }
+        else {
+            Server_drawCard(currentPlayer, playerIden2);
+        }
+        Rpc_updateUIInfo(player1Data, player2Data);
+    }
     // draw ONE random card to player x
     [ServerCallback]
     void Server_drawCard(NetworkIdentity playerFrom, NetworkIdentity playerTo) {
+        readyToGoOn = false;
         int rand;
-        List<GameObject> deckFrom = playerFrom == playerIden1? player1Data.deck : player2Data.deck;
+        Player playerData = playerFrom == playerIden1? player1Data : player2Data;
+        List<GameObject> deckFrom = playerData.deck;
         List<GameObject> deckTo = playerTo == playerIden1 ? player1Data.hand : player2Data.hand;
         // reduce hp by 1 if draw from empty deck
         if (deckFrom.Count <= 0) {
+            playerData.hp--;
             messageManager.addMsg(playerTo.connectionToClient, $"your deck is empty!");
             messageManager.addMsg(playerTo.connectionToClient, "you suffer from fatigue damage!");
             return;
@@ -321,6 +339,7 @@ public class MainGameManager : NetworkBehaviour
         deckTo[^1].GetComponent<Card>().handID = deckTo.Count-1;
         deckFrom.RemoveAt(rand);
         Rpc_drawCard(playerFrom == playerIden1? playerIden1 : playerIden2, playerTo, rand);
+        readyToGoOn = true;
     }
 
     // request draw card form effect of card??
@@ -333,6 +352,7 @@ public class MainGameManager : NetworkBehaviour
     // show card after draw
     [ClientRpc]
     void Rpc_drawCard(NetworkIdentity playerFrom, NetworkIdentity playerTo, int newCardIndex) {
+        readyToGoOn = false;
         List<GameObject> deckFrom = playerFrom.isLocalPlayer? playerDeck : opponentDeck;
         List<GameObject> deckTo = playerTo.isLocalPlayer? playerHandList : opponentHandList;
 
@@ -353,6 +373,7 @@ public class MainGameManager : NetworkBehaviour
         }
 
         updateDeckCount();
+        readyToGoOn = true;
     }
     #endregion -----------------------------------------
 
@@ -436,6 +457,7 @@ public class MainGameManager : NetworkBehaviour
     }
 
     // cal the valid cell for each player to place a unit
+    [ClientCallback]
     List<Cell> unitPlacableCell(int playerIndex) {
         List<Cell> cells = new();
         // player 1: left two cols
@@ -468,9 +490,10 @@ public class MainGameManager : NetworkBehaviour
     }
 
     // get all cell to move manually to of a card
+    [ClientCallback]
     List<Cell> unitMovableCell(Card card, int playerIndex) {
         List<Cell> cells = new();
-        int id = card.cellOn.id;
+        int id = card.cellOnID;
         int x = id;
         switch (card.manual_moveDir) {
             case MoveDirection.None:    break;
@@ -547,6 +570,7 @@ public class MainGameManager : NetworkBehaviour
     }
 
     // hide all cell placable indicator
+    [ClientCallback]
     public void resetValidCell() {
         foreach (Cell cell in boardCell.Values) {
             cell.showValidity(false);
@@ -557,8 +581,8 @@ public class MainGameManager : NetworkBehaviour
     // run card play effect/ place unit on borad
     [Command(requiresAuthority = false)]
     public void requestPlayCard(int cardHandID, int cellID, bool isP1) {
+        readyToGoOn = false;
         Card card = isP1 ? player1Data.hand[cardHandID].GetComponent<Card>() : player2Data.hand[cardHandID].GetComponent<Card>();
-        Cell cell = boardCell[cellID];
         NetworkIdentity calledPlayer = isP1 ? playerIden1 : playerIden2;
         Player playerData = isP1 ? player1Data : player2Data;
 
@@ -579,13 +603,13 @@ public class MainGameManager : NetworkBehaviour
             {
                 case CardType.Unit:
                     // save card on board
-                    boardCard[cell.id] = card.gameObject;
-                    card.cellOn = boardCell[cell.id].GetComponent<Cell>();
+                    boardCard_Server[cellID] = card.gameObject;
+                    card.cellOnID = cellID;
 
                     // play onPlay effect
                     card.onPlayEffect();
 
-                    Rpc_playCard(card.handID, cell.id, isP1? playerIden1 : playerIden2);
+                    Rpc_playCard(card.handID, cellID, isP1? playerIden1 : playerIden2);
                     break;
                 case CardType.Spell:
                     // add card from discard
@@ -597,7 +621,7 @@ public class MainGameManager : NetworkBehaviour
                     // play onPlay effect
                     // todo
 
-                    Rpc_playCard(card.handID, cell.id, isP1? playerIden1 : playerIden2);
+                    Rpc_playCard(card.handID, cellID, isP1? playerIden1 : playerIden2);
                     break;
             }
         }
@@ -614,11 +638,13 @@ public class MainGameManager : NetworkBehaviour
         pointingCell = null;
         cancelSelect();
         Rpc_updateUIInfo(player1Data, player2Data);
+        readyToGoOn = true;
     }
 
     // update client ui after someone played a card
     [ClientRpc]
     void Rpc_playCard(int cardHandID, int cellID, NetworkIdentity player) {
+        readyToGoOn = false;
         Card card;
         Cell cell = boardCell[cellID].GetComponent<Cell>();
         bool isMe = player.isLocalPlayer;
@@ -643,8 +669,8 @@ public class MainGameManager : NetworkBehaviour
         switch (card.cardType)
         {
             case CardType.Unit:
-                boardCard[cell.id] = card.gameObject;
-                card.cellOn = boardCell[cell.id].GetComponent<Cell>();
+                boardCard[cellID] = card.gameObject;
+                card.cellOnID = cellID;
                 
                 // put card on cell
                 card.gameObject.transform.SetParent(cell.gameObject.transform);
@@ -670,14 +696,14 @@ public class MainGameManager : NetworkBehaviour
 
                 break;
         }
+        readyToGoOn = true;
     }
 
     [Command (requiresAuthority = false)]
     public void requestMoveUnit(int cardBoardID, int cellID, bool isP1, bool autoMove) {
-        Card card = boardCard[cardBoardID].GetComponent<Card>();
-        Cell cell = boardCell[cellID];
+        readyToGoOn = false;
+        Card card = boardCard_Server[cardBoardID].GetComponent<Card>();
         NetworkIdentity calledPlayer = isP1? playerIden1 : playerIden2;
-        Player playerData = isP1 ? player1Data : player2Data;
 
         // return if not supposed to move card
         if (!autoMove && (currentPlayer != calledPlayer || gameState != GameState.PlayCards)) {
@@ -687,16 +713,21 @@ public class MainGameManager : NetworkBehaviour
 
         bool successMoveCard = false;
         // move card on board
-        // step on others effect
-        if (card.moved >= card.maxMove || autoMove) {
+        if (card.moved < card.maxMove || autoMove) {
             successMoveCard = true;
-            if (boardCard.ContainsKey(cell.id)) {
-                Card cardOnTargetCell = boardCard[cell.id].GetComponent<Card>();
+            // step on others effect
+            if (boardCard_Server.ContainsKey(cellID)) {
+                Card cardOnTargetCell = boardCard_Server[cellID].GetComponent<Card>();
                 if (cardOnTargetCell.cardType == CardType.Unit) {
                     // cant eat king, reduce hp instead, then destroy self
                     if (cardOnTargetCell.cardID == 0) {
-                        playerData.hp--;
-                        boardCard[card.cellOn.id] = null;
+                        // reduce player hp if king get beat by opponent unit
+                        // dun if "beat" by own unit, unit still discarded
+                        if (calledPlayer != cardOnTargetCell) {
+                            Player playerData = isP1 ? player2Data : player1Data;
+                            playerData.hp--;
+                        }
+                        boardCard_Server.Remove(card.cellOnID);
                         // discard moving unit
                         if (card.owner == playerIden1)
                             player1Data.discard.Add(card.gameObject);
@@ -712,22 +743,33 @@ public class MainGameManager : NetworkBehaviour
                             player1Data.discard.Add(cardOnTargetCell.gameObject);
                         else 
                             player2Data.discard.Add(cardOnTargetCell.gameObject);
-                        // reset card player state
+                        // reset card played state
                         cardOnTargetCell.onDiscardEffect();
 
-                        boardCard[cell.id] = card.gameObject;
-                        boardCard[card.cellOn.id] = null;
-                        card.cellOn = cell;
+                        boardCard_Server[cellID] = card.gameObject;
+                        boardCard_Server.Remove(cardBoardID);
+                        card.cellOnID = cellID;
                     }
                 }
                 // if (cardOnTargetCell.GetComponent<Card>().cardType == CardType.Trap) 
                 // later
             }
+            // fall off edge unit from auto move
+            else if (autoMove && !boardCell_Server.ContainsKey(cellID)) {
+                boardCard_Server.Remove(cardBoardID);
+                // discard dead unit
+                if (card.owner == playerIden1)
+                    player1Data.discard.Add(card.gameObject);
+                else 
+                    player2Data.discard.Add(card.gameObject);
+                // reset card played state
+                card.onDiscardEffect();
+            }
             // just move
             else {
-                boardCard[cell.id] = card.gameObject;
-                boardCard[card.cellOn.id] = null;
-                card.cellOn = cell;
+                boardCard_Server[cellID] = card.gameObject;
+                boardCard_Server.Remove(cardBoardID);
+                card.cellOnID = cellID;
             }
         }
         else if (card.moved >= card.maxMove) {
@@ -735,50 +777,62 @@ public class MainGameManager : NetworkBehaviour
             messageManager.addMsg(calledPlayer.connectionToClient, "you cannot move this unit yet!");
         }
 
-        if (successMoveCard)
-            Rpc_moveCard(cardBoardID, cellID, player1Data, player2Data);
+        if (successMoveCard) {
+            card.moved++;
+            Rpc_moveCard(cardBoardID, cellID);
+        }
 
         pointingCell = null;
         cancelSelect();
         Rpc_updateUIInfo(player1Data, player2Data);
+        readyToGoOn = true;
     }
 
     // update client ui after someone moved a unit
     [ClientRpc]
-    public void Rpc_moveCard(int cardBoardID, int cellID, Player player1Data, Player player2Data) {
+    public void Rpc_moveCard(int cardBoardID, int cellID) {
+        readyToGoOn = false;
         Card card = boardCard[cardBoardID].GetComponent<Card>();
-        Cell cell = boardCell[cellID].GetComponent<Cell>();
-        Player player = playerIden1.isLocalPlayer ? player1Data : player2Data;
+        Cell cell;
 
         // move card on board
-        // step on others effect
-        if (boardCard.ContainsKey(cell.id)) {
-            Card cardOnTargetCell = boardCard[cell.id].GetComponent<Card>();
+        if (boardCard.ContainsKey(cellID)) {
+            cell = boardCell[cellID].GetComponent<Cell>();
+            // step on others effect
+            Card cardOnTargetCell = boardCard[cellID].GetComponent<Card>();
             if (cardOnTargetCell.cardType == CardType.Unit) {
                 // cant eat king, reduce hp instead, then destroy self
                 if (cardOnTargetCell.cardID == 0) {
-                    boardCard[card.cellOn.id] = null;
+                    boardCard.Remove(card.cellOnID);
                     // discard moving unit
-                    if (card.owner.isLocalPlayer)
-                        player.discard.Add(card.gameObject);
-                    else 
-                        player.discard.Add(card.gameObject);
+                    if (card.owner.isLocalPlayer) {
+                        playerDiscard.Add(card.gameObject);
+                        card.gameObject.transform.SetParent(discardPObj.transform, false);
+                    }
+                    else {
+                        opponentDiscard.Add(card.gameObject);
+                        card.gameObject.transform.SetParent(discardOObj.transform, false);
+                    }
                     // reset card player state
                     card.onDiscardEffect();
                 }
                 // eat normal units
                 else {
                     // discard eaten unit
-                    if (cardOnTargetCell.owner.isLocalPlayer)
-                        player.discard.Add(cardOnTargetCell.gameObject);
-                    else 
-                        player.discard.Add(cardOnTargetCell.gameObject);
-                    // reset card player state
+                    if (cardOnTargetCell.owner.isLocalPlayer) {
+                        playerDiscard.Add(cardOnTargetCell.gameObject);
+                        cardOnTargetCell.gameObject.transform.SetParent(discardPObj.transform, false);
+                    }
+                    else {
+                        opponentDiscard.Add(cardOnTargetCell.gameObject);
+                        cardOnTargetCell.gameObject.transform.SetParent(discardOObj.transform, false);
+                    }
+                    // reset card played state
                     cardOnTargetCell.onDiscardEffect();
 
-                    boardCard[cell.id] = card.gameObject;
-                    boardCard[card.cellOn.id] = null;
-                    card.cellOn = cell;
+                    boardCard[cellID] = card.gameObject;
+                    boardCard.Remove(cardBoardID);
+                    card.cellOnID = cellID;
 
                     // put card on cell
                     card.gameObject.transform.SetParent(cell.gameObject.transform, false);
@@ -787,21 +841,45 @@ public class MainGameManager : NetworkBehaviour
             // if (cardOnTargetCell.GetComponent<Card>().cardType == CardType.Trap) 
             // later
         }
+        // fall off edge unit from auto move
+        else if (!boardCell.ContainsKey(cellID)) {
+            boardCard.Remove(card.cellOnID);
+            // discard dead unit
+            if (card.owner.isLocalPlayer) {
+                playerDiscard.Add(card.gameObject);
+                card.gameObject.transform.SetParent(discardPObj.transform, false);
+            }
+            else {
+                opponentDiscard.Add(card.gameObject);
+                card.gameObject.transform.SetParent(discardOObj.transform, false);
+            }
+            // reset card played state
+            card.onDiscardEffect();
+        }
         // just move
         else {
-            boardCard[cell.id] = card.gameObject;
-            boardCard[card.cellOn.id] = null;
-            card.cellOn = cell;
+            cell = boardCell[cellID].GetComponent<Cell>();
+
+            boardCard[cellID] = card.gameObject;
+            boardCard.Remove(cardBoardID);
+            card.cellOnID = cellID;
 
             // put card on cell
             card.gameObject.transform.SetParent(cell.gameObject.transform, false);  
         }
+
+        card.moved++;
+        readyToGoOn = true;
     }
     #endregion -----------------------------------------
 
     #endregion -----------------------------------------
 
     #region turn end (handle what happen between player's turn) ---- auto move unit!!
+    void GF_turnEnd() {
+        StartCoroutine(slowTurnEnd());
+    }
+    
     // manually end turn by current player
     public void turnEndButton() {
         turnEnd(playerIden1.isLocalPlayer ? playerIden1 : playerIden2);
@@ -813,14 +891,64 @@ public class MainGameManager : NetworkBehaviour
         gameState = GameState.TurnEnd;
     }
 
-    // card auto effect on turn end
-    [ServerCallback]
-    void runTurnEndEffect() {
-        // todo
-        foreach (GameObject cardObj in boardCard.Values) {
-            Card card = cardObj.GetComponent<Card>();
-            card.onTurnEndEffect();
+    // move all cards from discard to deck
+    [Server]
+    public void Server_resetDeck(int _playerIndex) {
+        readyToGoOn = false;
+        Player player = _playerIndex == 1? player1Data : player2Data;
+        if (player.deck.Count == 0 && player.discard.Count > 0) {
+            foreach (GameObject card in player.discard) {
+                player.deck.Add(card);
+            }
+            player.discard.Clear();
         }
+
+        Rpc_resetDeck(_playerIndex);
+        readyToGoOn = true;
+    }
+
+    [ClientRpc]
+    void Rpc_resetDeck(int _playerIndex) {
+        readyToGoOn = false;
+        List<GameObject> deck = _playerIndex == 1? playerDeck : opponentDeck;
+        List<GameObject> discard = _playerIndex == 1? playerDiscard : opponentDiscard;
+        GameObject deckObj = _playerIndex == 1? deckPObj : deckOObj;
+
+        if (deck.Count == 0 && discard.Count > 0) {
+            foreach (GameObject card in discard) {
+                card.transform.SetParent(deckObj.transform, false);
+                deck.Add(card);
+            }
+            discard.Clear();
+        }
+        readyToGoOn = true;
+    }
+
+    // card auto effect on turn end
+    [Server]
+    IEnumerator runTurnEndEffect() {
+        // todo
+        // increase max mana
+        if (playerIndex == 1)
+            player1Data.incMaxMana();
+        else 
+            player2Data.incMaxMana();
+
+        // auto move cards
+        List<GameObject> onBoardCards = boardCard_Server.OrderBy(k => k.Key).Select(k => k.Value).ToList();
+        if (currentTurn%2 == 0)
+            onBoardCards.Reverse();
+
+        foreach (GameObject cardObj in onBoardCards) {
+            Card card = cardObj.GetComponent<Card>();
+            if (card.played) {
+                readyToGoOn = false;
+                card.onTurnEndEffect();
+                yield return new WaitUntil(() => readyToGoOn);
+                readyToGoOn = false;
+            }
+        }
+        Rpc_updateUIInfo(player1Data, player2Data);
     }
 
     // ready next turn
@@ -832,6 +960,18 @@ public class MainGameManager : NetworkBehaviour
         // set next player
         currentPlayer = currentPlayer == playerIden1 ? playerIden2 : playerIden1;
         playerIndex = playerIndex == 1 ? 2 : 1;
+    }
+
+    IEnumerator slowTurnEnd() {
+        // reset deck from discard if deck is empty
+        Server_resetDeck(playerIndex);
+        
+        // auto move units
+        yield return StartCoroutine(runTurnEndEffect());
+        setTurnInfo();
+
+        Rpc_updateUIInfo(player1Data, player2Data);
+        nextState = GameState.DrawCards;
     }
     #endregion -----------------------------------------
 
@@ -854,9 +994,7 @@ public class MainGameManager : NetworkBehaviour
         Player player = playerIden1.isLocalPlayer ? player1Data : player2Data;
         Player opponent = playerIden1.isLocalPlayer ? player2Data : player1Data;
         
-        // playerNameText.text = playerIden1.isLocalPlayer ? player1Name : player2Name;
         playerNameText.text = player.name;
-        // opponentNameText.text = playerIden1.isLocalPlayer ? player2Name : player1Name;
         opponentNameText.text = opponent.name;
         playerHpText.text = $"{player.hp} / {player.maxHp}";
         opponentHpText.text = $"{opponent.hp} / {opponent.maxHp}";
@@ -866,8 +1004,14 @@ public class MainGameManager : NetworkBehaviour
         opponentHandText.text = $"{opponentHandList.Count}";
     }
 
+    void resetCellAnime() {
+        foreach (Cell cell in boardCell.Values)
+            cell.avaliableIndicator.GetComponent<CellIndicatorAnimation>().resetAll();
+    }
+
     [ClientRpc]
     public void Rpc_updateUIInfo(Player player1Data, Player player2Data) {
+        resetCellAnime();
         updateDeckCount();
         updateCardHandID();
         updatePlayerInfo(player1Data, player2Data);
@@ -884,7 +1028,7 @@ public class MainGameManager : NetworkBehaviour
     {
         base.OnStopClient();
         // clear all card objects
-        foreach (GameObject cardObj in boardCard.Values)    Destroy(cardObj);
+        foreach (GameObject cardObj in boardCard_Server.Values)    Destroy(cardObj);
         foreach (GameObject cardObj in playerDeck)          Destroy(cardObj);
         foreach (GameObject cardObj in opponentDeck)        Destroy(cardObj);
         foreach (GameObject cardObj in playerDiscard)       Destroy(cardObj);

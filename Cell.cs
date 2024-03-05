@@ -7,9 +7,8 @@ using UnityEngine.EventSystems;
 public class Cell : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
 {
     MainGameManager mainGameManager;
-    BoxCollider2D boxCollider;
     // indicate cell is valid
-    [SerializeField] GameObject avaliableIndicator;
+    public GameObject avaliableIndicator;
     public bool isPlaceable = false;
     // row: 100*r;  col: 1*c
     public int id;
@@ -21,7 +20,7 @@ public class Cell : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
     // resize box collider
     void resizeCollider() {
-        boxCollider = gameObject.GetComponent<BoxCollider2D>();
+        BoxCollider2D boxCollider = gameObject.GetComponent<BoxCollider2D>();
         RectTransform rt = gameObject.transform.GetComponent<RectTransform>();
 
         float width = rt.sizeDelta.x * rt.localScale.x;
@@ -45,7 +44,7 @@ public class Cell : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             if (!card.played)
                 mainGameManager.requestPlayCard(mainGameManager.selectedCard.handID, mainGameManager.pointingCell.id, mainGameManager.playerIden1.isLocalPlayer);
             else if (card.played && card.cardType == CardType.Unit)
-                mainGameManager.requestMoveUnit(mainGameManager.selectedCard.cellOn.id, mainGameManager.pointingCell.id, mainGameManager.playerIden1.isLocalPlayer, false);
+                mainGameManager.requestMoveUnit(mainGameManager.selectedCard.cellOnID, mainGameManager.pointingCell.id, mainGameManager.playerIden1.isLocalPlayer, false);
         }
     }
 

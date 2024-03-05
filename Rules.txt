@@ -1,0 +1,33 @@
+Game Flow:
+    Init board, cards
+    loop (until one player hp < 0) {
+        Draw cards
+        Current player play cards, move units
+        Turn end, trigger units' auto move (and other turn end effect)
+        Pass to next player
+    }
+    other player wins
+
+Player Order:
+    host first, client next
+
+Draw cards:
+    draw 1 at start of every turn, except turn 1
+
+Play cards:
+    select a card and play on board, reduce required mana
+    just played units cannot move (manually) until next turn
+
+Move units:
+    each unit can move up to its max move time (all 1 for now)
+    player can eat their own units except king
+    when unit step on oppoent king, unit discarded oppoent hp -1,
+        if stop on own king, unit discarded no hp reduce
+
+Turn end:
+    current player max mana +1
+    units with auto move stats move
+
+Auto Move Order:
+    odd turn:   top to bot, left to right
+    even turn:  bot to top, right to left

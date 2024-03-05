@@ -79,7 +79,7 @@ public class CardSelection : NetworkBehaviour, IPointerEnterHandler, IPointerExi
     public void OnPointerEnter(PointerEventData eventData)
     {
         // if (_isDragging) return;
-        if (!thisCard.owner) return;
+        if (!thisCard.owner.isLocalPlayer && !thisCard.played) return;
         //show card description
         int id = gameObject.GetComponent<Card>().cardID;
         mainGameManager.showCardPreview(id);
@@ -99,7 +99,7 @@ public class CardSelection : NetworkBehaviour, IPointerEnterHandler, IPointerExi
     #region click
     public void OnPointerClick(PointerEventData eventData)
     {
-        if (!thisCard.owner) return;
+        if (!thisCard.owner.isLocalPlayer) return;
         mainGameManager.selectCard(gameObject);
     }
     #endregion

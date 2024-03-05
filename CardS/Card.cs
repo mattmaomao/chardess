@@ -12,13 +12,15 @@ public class Card : MonoBehaviour
     // card info
     #region card info
     public NetworkIdentity owner;
+    public int uniqueID;
     public int cardID;
     public string cardName;
     public CardType cardType;
     public bool played = false;
     public int playedTurn = 0;
     public int moved = 0;
-    public Cell cellOn;
+    public bool autoMoved = false;
+    public int cellOnID;
     public int handID = -1;
     #endregion
 
@@ -155,6 +157,10 @@ public class Card : MonoBehaviour
     public void onDiscardEffect() {
         played = false;
         playedTurn = 0;
+        cellOnID = 0;
+        handID = -1;
+        updateSprite();
+        gameObject.SetActive(false);
     }
 
     // effect active on play
@@ -166,24 +172,25 @@ public class Card : MonoBehaviour
 
     // auto run effect on turn end
     public void onTurnEndEffect() {
-        if (!played)    return;
+        if (!played) return;
         playedTurn++;
         moved = 0;
         // auto move
         int dir = owner == mainGameManager.playerIden1 ? 1 : -1;
         switch (auto_moveDir) {
             case MoveDirection.Horizontal:
-                mainGameManager.requestMoveUnit(cellOn.id, cellOn.id + auto_moveAmount * dir, owner == mainGameManager.playerIden1, true);
+                mainGameManager.requestMoveUnit(cellOnID, cellOnID + auto_moveAmount * dir, owner == mainGameManager.playerIden1, true);
                 break;
             case MoveDirection.Vertical:
-                mainGameManager.requestMoveUnit(cellOn.id, cellOn.id + auto_moveAmount * 100 * dir, owner == mainGameManager.playerIden1, true);
+                mainGameManager.requestMoveUnit(cellOnID, cellOnID + auto_moveAmount * 100 * dir, owner == mainGameManager.playerIden1, true);
                 break;
             case MoveDirection.Forward:
-                mainGameManager.requestMoveUnit(cellOn.id, cellOn.id + auto_moveAmount * dir, owner == mainGameManager.playerIden1, true);
+                mainGameManager.requestMoveUnit(cellOnID, cellOnID + auto_moveAmount * dir, owner == mainGameManager.playerIden1, true);
                 break;
             default:
                 Debug.LogError("not yet implemented");
                 break;
         }
+        return;
     }
 }

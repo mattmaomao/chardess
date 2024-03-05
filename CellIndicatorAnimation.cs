@@ -23,6 +23,11 @@ public class CellIndicatorAnimation : MonoBehaviour
         }
     }
 
+    public void resetAll() {
+        alpha = 0;
+        timer = 0f;
+    }
+
     void changeAlpha() {
         if (up) {
             alpha += animationSpeed;
