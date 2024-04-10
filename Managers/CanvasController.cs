@@ -703,7 +703,17 @@ public class CanvasController : MonoBehaviour
         System.Random random = new();
         const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789";
         int length = 4;
-        string randRID = new string(Enumerable.Repeat(chars, length).Select(s => s[random.Next(s.Length)]).ToArray());
+        string randRID = "";
+        // give random room id from open matches
+        if (openMatches.Count > 0) {
+            int randomIndex = random.Next(0, openMatches.Count);
+            var key = openMatches.ElementAt(randomIndex).Key;
+            randRID = openMatches[key].joinCode;
+        }
+        else {
+            randRID = new string(Enumerable.Repeat(chars, length).Select(s => s[random.Next(s.Length)]).ToArray());
+        }
+        // generate random name
         string randPName = new string(Enumerable.Repeat(chars, length).Select(s => s[random.Next(s.Length)]).ToArray());
         roomIDInput.text = randRID;
         playerNameInput.text = randPName;

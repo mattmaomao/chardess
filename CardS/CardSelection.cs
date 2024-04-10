@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using Mirror;
-using Mono.CecilX;
 
 // IBeginDragHandler, IDragHandler, IEndDragHandler
 public class CardSelection : NetworkBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
@@ -83,16 +82,19 @@ public class CardSelection : NetworkBehaviour, IPointerEnterHandler, IPointerExi
         //show card description
         int id = gameObject.GetComponent<Card>().cardID;
         mainGameManager.showCardPreview(id);
-        mainGameManager.showavailableMove(GetComponent<Card>());
+        if (mainGameManager.selectedCard == null)
+            mainGameManager.showavailableMove(GetComponent<Card>());
     }
     public void OnPointerExit(PointerEventData eventData)
     {
         // if (_isDragging) return;
         //hide card description
         mainGameManager.hideCardPreview();
-        mainGameManager.resetValidCell();
-        if (mainGameManager.selectedCard != null)
+        if (mainGameManager.selectedCard != null) {
             mainGameManager.showavailableMove(mainGameManager.selectedCard);
+            return;
+        }
+        mainGameManager.resetValidCell();
     }
     #endregion
 
@@ -100,7 +102,8 @@ public class CardSelection : NetworkBehaviour, IPointerEnterHandler, IPointerExi
     public void OnPointerClick(PointerEventData eventData)
     {
         if (!thisCard.owner.isLocalPlayer) return;
-        mainGameManager.selectCard(gameObject);
+        if (mainGameManager.selectedCard == null)
+            mainGameManager.selectCard(gameObject);
     }
     #endregion
 

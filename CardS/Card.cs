@@ -28,18 +28,24 @@ public class Card : MonoBehaviour
     #region card stat
     public int cost;
     public int maxMove;
-    public MoveDirection manual_moveDir;
+    public Direction manual_moveDir;
     public int manual_moveAmount;
-    public MoveDirection auto_moveDir;
+    public Direction auto_moveDir;
     public int auto_moveAmount;
     [SerializeField] Text cardDescription;
+
+    // for spell
+    public SpellFrom spellCaster;
+    public SpellType spellType;
+    public Direction spellDir = Direction.None;
+    public int spellRange = 0;
     #endregion
 
     // display
     #region card display
     [SerializeField] GameObject cardFace;
     [SerializeField] GameObject playedFace;
-    public GameObject cardBack;
+    [SerializeField] GameObject cardBack;
     [SerializeField] Image cardIcon;
     [SerializeField] Image playedSprite;
     [SerializeField] Image playedSprite_Frame;
@@ -65,70 +71,216 @@ public class Card : MonoBehaviour
         cardType = _cardObj.cardType;
         // stat
         cost = _cardObj.cost;
+        costNum.text = $"{cost}";
         maxMove = _cardObj.maxMove;
         manual_moveDir = _cardObj.manual_moveDir;
         manual_moveAmount = _cardObj.manual_moveAmount;
         auto_moveDir = _cardObj.auto_moveDir;
         auto_moveAmount = _cardObj.auto_moveAmount;
+
+        // spell
+        spellType = _cardObj.spellType;
+        spellCaster = _cardObj.spellFrom;
+        spellDir = _cardObj.spellDir;
+        spellRange = _cardObj.spellRange;
+
         // display
         cardIcon.sprite = _cardObj.cardIcon;
         playedSprite.sprite = _cardObj.boardSprite;
         cardDescription.text = _cardObj.cardDescription;
 
         // move icon
+        setManualMove();
+        setAutoMove();
+        // set icon for spell
+        setSpellFrom();
+        setSpellRange();
+
+    }
+
+    // reset "local" data after discard
+    public void onDiscardEffect() {
+        played = false;
+        playedTurn = 0;
+        cellOnID = 0;
+        handID = -1;
+        gameObject.SetActive(false);
+        updateSprite();
+    }
+
+    // effect active on play
+    public void onPlayEffect(int cellID, bool byServer) {
+        switch (cardType) {
+            case CardType.None:
+                Debug.LogError("this card has no type");
+                break;
+
+            case CardType.Unit:
+                RectTransform cardRT = gameObject.GetComponent<RectTransform>();
+                cardRT.anchoredPosition = new Vector2(0, 0);
+                cardRT.anchorMin = new Vector2(0.5f, 0.5f);
+                cardRT.anchorMax = new Vector2(0.5f, 0.5f);
+                cardRT.pivot = new Vector2(0.5f, 0.5f);
+                gameObject.SetActive(true);
+
+                played = true;
+                // card cant move when just played
+                moved = maxMove;
+                updateSprite();
+                break;
+
+            case CardType.Spell:
+                Spells.castSpell(this, spellType, cellID, byServer);
+                break;
+
+            // later
+            // case CardType.Trap:
+            //     break;
+
+            default:
+                Debug.LogError("not yet implemented");
+                break;
+        }
+    }
+
+    // auto run effect on turn end
+    public void onTurnEndEffect() {
+        if (!played) return;
+        playedTurn++;
+        moved = 0;
+        // auto move
+        int dir = owner == mainGameManager.playerIden1 ? 1 : -1;
+        switch (auto_moveDir) {
+            case Direction.None:
+                mainGameManager.readyToGoOn = true;
+                break;
+            case Direction.Hori:
+                mainGameManager.requestMoveUnit(cellOnID, cellOnID + auto_moveAmount * dir, owner == mainGameManager.playerIden1, true);
+                break;
+            case Direction.Verti:
+                mainGameManager.requestMoveUnit(cellOnID, cellOnID + auto_moveAmount * 100 * dir, owner == mainGameManager.playerIden1, true);
+                break;
+            case Direction.Forward:
+                mainGameManager.requestMoveUnit(cellOnID, cellOnID + auto_moveAmount * dir, owner == mainGameManager.playerIden1, true);
+                break;
+            default:
+                Debug.LogError("not yet implemented");
+                break;
+        }
+        return;
+    }
+
+    #region UI
+    void setManualMove() {
         manualMoveNum.text = $"{manual_moveAmount}";
         switch (manual_moveDir) {
-            case MoveDirection.None:
+            case Direction.None:
                 manualMoveIcon.sprite = mainGameManager.sprites[7];
                 manualMoveNum.text = "";
                 break;
-            case MoveDirection.Horizontal:
+            case Direction.Hori:
                 manualMoveIcon.sprite = mainGameManager.sprites[4];
                 break;
-            case MoveDirection.Vertical:
+            case Direction.Verti:
                 manualMoveIcon.sprite = mainGameManager.sprites[5];
                 break;
-            case MoveDirection.Forward:
+            case Direction.Forward:
                 manualMoveIcon.sprite = mainGameManager.sprites[6];
                 break;
-            case MoveDirection.Ortho:
+            case Direction.Ortho:
                 manualMoveIcon.sprite = mainGameManager.sprites[8];
                 break;
-            case MoveDirection.Cross:
+            case Direction.Cross:
                 manualMoveIcon.sprite = mainGameManager.sprites[9];
                 break;
-            case MoveDirection.AllDir:
+            case Direction.AllDir:
                 manualMoveIcon.sprite = mainGameManager.sprites[10];
                 break;
         }
+    }
 
+    void setAutoMove() {
         autoMoveNum.text = $"{auto_moveAmount}";
         switch (auto_moveDir) {
-            case MoveDirection.None:
+            case Direction.None:
                 autoMoveIcon.sprite = mainGameManager.sprites[7];
                 autoMoveNum.text = "";
                 break;
-            case MoveDirection.Horizontal:
+            case Direction.Hori:
                 autoMoveIcon.sprite = mainGameManager.sprites[4];
                 break;
-            case MoveDirection.Vertical:
+            case Direction.Verti:
                 autoMoveIcon.sprite = mainGameManager.sprites[5];
                 break;
-            case MoveDirection.Forward:
+            case Direction.Forward:
                 autoMoveIcon.sprite = mainGameManager.sprites[6];
                 break;
-            case MoveDirection.Ortho:
+            case Direction.Ortho:
                 autoMoveIcon.sprite = mainGameManager.sprites[8];
                 break;
-            case MoveDirection.Cross:
+            case Direction.Cross:
                 autoMoveIcon.sprite = mainGameManager.sprites[9];
                 break;
-            case MoveDirection.AllDir:
+            case Direction.AllDir:
                 autoMoveIcon.sprite = mainGameManager.sprites[10];
                 break;
         }
+    }
 
-        costNum.text = $"{cost}";
+    void setSpellFrom() {
+        manualMoveNum.text = $"{spellType}";
+        switch (spellCaster) {
+            case SpellFrom.None:
+                manualMoveIcon.sprite = mainGameManager.sprites[7];
+                manualMoveNum.text = "";
+                break;
+            case SpellFrom.All:
+                manualMoveIcon.sprite = mainGameManager.sprites[0]; // todo
+                break;
+            case SpellFrom.Targeted:
+                manualMoveIcon.sprite = mainGameManager.sprites[0]; // todo
+                break;
+            case SpellFrom.King:
+                manualMoveIcon.sprite = mainGameManager.sprites[0]; // todo
+                break;
+            case SpellFrom.Unit:
+                manualMoveIcon.sprite = mainGameManager.sprites[0]; // todo
+                break;
+            case SpellFrom.NonUnit:
+                manualMoveIcon.sprite = mainGameManager.sprites[0]; // later
+                break;
+            case SpellFrom.SpecUnit:
+                manualMoveIcon.sprite = mainGameManager.sprites[0]; // later
+                break;
+        }
+    }
+
+    void setSpellRange() {
+        autoMoveNum.text = $"{spellRange}";
+        switch (spellDir) {
+            case Direction.None:
+                autoMoveIcon.sprite = mainGameManager.sprites[7];
+                autoMoveNum.text = "";
+                break;
+            case Direction.Hori:
+                autoMoveIcon.sprite = mainGameManager.sprites[4];
+                break;
+            case Direction.Verti:
+                autoMoveIcon.sprite = mainGameManager.sprites[5];
+                break;
+            case Direction.Forward:
+                autoMoveIcon.sprite = mainGameManager.sprites[6];
+                break;
+            case Direction.Ortho:
+                autoMoveIcon.sprite = mainGameManager.sprites[8];
+                break;
+            case Direction.Cross:
+                autoMoveIcon.sprite = mainGameManager.sprites[9];
+                break;
+            case Direction.AllDir:
+                autoMoveIcon.sprite = mainGameManager.sprites[10];
+                break;
+        }
     }
 
     // set the card face up/ down
@@ -152,45 +304,6 @@ public class Card : MonoBehaviour
         cardFace.SetActive(!played);
         playedFace.SetActive(played);
     }
+    #endregion -----------------------------------------
 
-    // reset "local" data after discard
-    public void onDiscardEffect() {
-        played = false;
-        playedTurn = 0;
-        cellOnID = 0;
-        handID = -1;
-        updateSprite();
-        gameObject.SetActive(false);
-    }
-
-    // effect active on play
-    public void onPlayEffect() {
-        played = true;
-        // card cant move when just played
-        moved = maxMove;
-    }
-
-    // auto run effect on turn end
-    public void onTurnEndEffect() {
-        if (!played) return;
-        playedTurn++;
-        moved = 0;
-        // auto move
-        int dir = owner == mainGameManager.playerIden1 ? 1 : -1;
-        switch (auto_moveDir) {
-            case MoveDirection.Horizontal:
-                mainGameManager.requestMoveUnit(cellOnID, cellOnID + auto_moveAmount * dir, owner == mainGameManager.playerIden1, true);
-                break;
-            case MoveDirection.Vertical:
-                mainGameManager.requestMoveUnit(cellOnID, cellOnID + auto_moveAmount * 100 * dir, owner == mainGameManager.playerIden1, true);
-                break;
-            case MoveDirection.Forward:
-                mainGameManager.requestMoveUnit(cellOnID, cellOnID + auto_moveAmount * dir, owner == mainGameManager.playerIden1, true);
-                break;
-            default:
-                Debug.LogError("not yet implemented");
-                break;
-        }
-        return;
-    }
 }

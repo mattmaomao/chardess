@@ -1,9 +1,9 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
-public enum MoveDirection {None, Horizontal, Vertical, Forward, Ortho, Cross, AllDir};
-public enum CardType {Unit, Spell, Trap};
+public enum Direction {None, Hori, Verti, Forward, Ortho, Cross, AllDir};
+public enum CardType {None, Unit, Spell, Trap};
+public enum SpellType {None, Damage, Heal}; //spawn, stun, move
+public enum SpellFrom {None, All, Targeted, King, Unit, NonUnit, SpecUnit};
 
 [CreateAssetMenu(menuName = "Cards")]
 public class CardScriptableObject : ScriptableObject
@@ -14,12 +14,18 @@ public class CardScriptableObject : ScriptableObject
     public CardType cardType;
 
     // card stat
-    public int cost;
+    public int cost = 1;
     public int maxMove = 1;
-    public MoveDirection manual_moveDir;
-    public int manual_moveAmount;
-    public MoveDirection auto_moveDir;
-    public int auto_moveAmount;
+    public Direction manual_moveDir = Direction.None;
+    public int manual_moveAmount = 0;
+    public Direction auto_moveDir = Direction.None;
+    public int auto_moveAmount = 0;
+
+    // for spell
+    public SpellType spellType = SpellType.None;
+    public SpellFrom spellFrom = SpellFrom.None;
+    public Direction spellDir = Direction.None;
+    public int spellRange = 0;
 
     // card display
     public Sprite cardIcon;
